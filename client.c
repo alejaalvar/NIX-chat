@@ -1,9 +1,10 @@
 /**
  * @file client.c
  * @author Alejandro Alvarado
- * @brief Start listening
+ * @brief Chat client using UNIX domain sockets
  */
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,10 @@
 #define SOCKET_PATH "/tmp/chat.sock"
 #define BUF_SIZE 256
 
+static volatile int is_running = 1;
+
+static void handle_sig(int __attribute__((unused)) sig) { is_running = 0; }
+
 int main(void) {
   int sockfd;
   struct sockaddr_un addr;
@@ -22,6 +27,19 @@ int main(void) {
   fd_set read_fds;
   int stdin_fd = fileno(stdin);
   int max_fd;
+
+  {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handle_sig;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGPIPE, &sa,
+              NULL); // prevents client from crashing if servere dies mid-send
+  }
 
   // Create the socket
   sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -45,15 +63,17 @@ int main(void) {
   max_fd = sockfd > stdin_fd ? sockfd : stdin_fd;
 
   // Begin listening
-  while (1) {
+  while (is_running) {
     // Setup the file descriptors to watch
     FD_ZERO(&read_fds);
     FD_SET(stdin_fd, &read_fds);
     FD_SET(sockfd, &read_fds);
 
     if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) == -1) {
-      perror("select");
-      exit(EXIT_FAILURE);
+      if (is_running) {
+        perror("select");
+      }
+      break;
     }
 
     // Input received from the keyboard

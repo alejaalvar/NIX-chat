@@ -4,6 +4,7 @@
  * @breif Chat server using Unix domain sockets
  */
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,9 @@
 #define BUF_SIZE 256
 #define NUM_CLIENTS 2
 
+static volatile sig_atomic_t is_running = 1;
+static void handle_sig(int __attribute__((unused)) sig) { is_running = 0; }
+
 int main(void) {
   int sockfd;
   int client_fds[NUM_CLIENTS]; // the fds to listen on
@@ -23,6 +27,19 @@ int main(void) {
   char buf[BUF_SIZE]; // holding space for read/write
   fd_set read_fds;
   int maxfd;
+
+  {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa)); // clear the sa struct fisrt
+    sa.sa_handler = handle_sig;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    sigaction(SIGINT, &sa, NULL);  // Ctrl + C
+    sigaction(SIGKILL, &sa, NULL); // someone calls kill on the proc
+    sigaction(SIGPIPE, &sa, NULL); // a send() to a disconnected client - stops
+                                   // the server from crashing
+  }
 
   // Create socket
   sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -65,15 +82,17 @@ int main(void) {
   // Relay loop - this forwards the message
   maxfd = client_fds[0] > client_fds[1] ? client_fds[0] : client_fds[1];
 
-  while (1) {
+  while (is_running) {
     FD_ZERO(&read_fds);
     FD_SET(client_fds[0], &read_fds);
     FD_SET(client_fds[1], &read_fds);
 
     // maxfd + 1 is required by select (max fds to select on, plus one is reqd)
     if (select(maxfd + 1, &read_fds, NULL, NULL, NULL) == -1) {
-      perror("select");
-      exit(EXIT_FAILURE);
+      if (is_running) {
+        perror("select");
+      }
+      break; // break the inf loop
     }
 
     // Now we see if we have any messages on each fd (connection)
@@ -83,7 +102,8 @@ int main(void) {
         ssize_t n = recv(client_fds[i], buf, BUF_SIZE - 1, 0);
         if (n <= 0) {
           printf("Client %d disconnected.\n", i + 1);
-          goto cleanup;
+          is_running = 0;
+          break; // break the inf loop
         }
         buf[n] = '\0';
         // Forward to the other client
@@ -92,7 +112,6 @@ int main(void) {
       }
     }
   }
-cleanup:
   close(client_fds[0]);
   close(client_fds[1]);
   close(sockfd);
