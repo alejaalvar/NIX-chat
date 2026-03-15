@@ -19,6 +19,9 @@ int main(void) {
   int sockfd;
   struct sockaddr_un addr;
   char buf[BUF_SIZE]; // holding space for read/write
+  fd_set read_fds;
+  int stdin_fd = fileno(stdin);
+  int max_fd;
 
   // Create the socket
   sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -39,9 +42,7 @@ int main(void) {
   }
   printf("Connected to server!\n");
 
-  fd_set read_fds;
-  int stdin_fd = fileno(stdin);
-  int max_fd = sockfd > stdin_fd ? sockfd : stdin_fd;
+  max_fd = sockfd > stdin_fd ? sockfd : stdin_fd;
 
   // Begin listening
   while (1) {
