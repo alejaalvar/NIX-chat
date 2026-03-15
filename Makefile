@@ -20,10 +20,10 @@ $(PROG1).o: $(PROG1).c
 	$(CC) $(CFLAGS) -c $<
 
 $(PROG2): $(PROG2).o
-	$(CC): $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(PROG2).o: $(PROG2).c
-	$(CC): $(CFLAGS) -c $<
+	$(CC) $(CFLAGS) -c $<
 
 clean:
 	rm -f $(PROG1) $(PROG2) *.o *~ \#*
